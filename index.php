@@ -2,7 +2,7 @@
 echo "<!DOCTYPE html>";
 echo "<html>";
 echo "<head>";
-echo "<title>Azure DevOps CI/CD Demo</title>";
+echo "<title>Azure DevOps CI/CD Version 1.1</title>";
 echo "<style>";
 echo "body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; background-color: #f4f4f4; }";
 echo "h1 { color: #0078D4; }";

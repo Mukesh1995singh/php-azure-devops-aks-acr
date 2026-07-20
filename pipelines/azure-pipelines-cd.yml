@@ -1,0 +1,39 @@
+trigger: none
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+stages:
+- stage: Deploy
+  displayName: 'Deploy Stage'
+  jobs:
+  - job: DeployToAKS
+    displayName: 'Deploy to AKS Job'
+    steps:
+    
+    # 1. Download manifests directly from the specific CI pipeline definition
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download Kubernetes Manifests'
+      name: DownloadManifests # Added a name to reference its outputs later
+      inputs:
+        buildType: 'specific'
+        project: 'bc3eaff1-e291-4c5e-9f12-4b40b75eeb52'
+        pipeline: 'php-project' 
+        buildVersionToDownload: 'latest'
+        artifactName: 'kubernetes-manifests'
+        targetPath: '$(Pipeline.Workspace)/kubernetes-manifests'
+
+    # 2. Deploy the manifests to your AKS cluster
+    - task: KubernetesManifest@1
+      displayName: 'Deploy Application to AKS'
+      inputs:
+        action: 'deploy'
+        connectionType: 'kubernetesServiceConnection'
+        kubernetesServiceConnection: 'aks-connection'
+        namespace: 'default'
+        rolloutStatusTimeout: '30'
+        manifests: |
+          $(Pipeline.Workspace)/kubernetes-manifests/deployment.yml
+          $(Pipeline.Workspace)/kubernetes-manifests/service.yml
+        containers: |
+          myacr73010.azurecr.io/php-app:$(Build.BuildId)
