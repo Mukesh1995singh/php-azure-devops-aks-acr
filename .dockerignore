@@ -1,5 +1,7 @@
-# Temporary & Build files
+# Git & Log files
 *.log
+
+# Temporary & Build files
 *.tmp
 *.temp
 image-tag.txt

@@ -1,39 +1,200 @@
 trigger: none
 
-pool:
-  vmImage: 'ubuntu-latest'
+resources:
+  pipelines:
+    - pipeline: ci-build
+      source: PHP-App-CI
+      trigger:
+        branches:
+          include:
+            - main
+
+variables:
+  # Container Registry & Image Details
+  imageRepository: php-app
+  containerRegistry: mukeshacr.azurecr.io
+
+  # Kubernetes Settings
+  k8sServiceConnection: aks-service-connection
+  k8sNamespace: php-app
+
+  # Workload Identity & Azure Key Vault Variables
+  phpManagedIdentityClientId: $(PHP_MANAGED_IDENTITY_CLIENT_ID)
+  keyVaultName: $(KEYVAULT_NAME)
+  tenantId: $(AZURE_TENANT_ID)
 
 stages:
-- stage: Deploy
-  displayName: 'Deploy Stage'
-  jobs:
-  - job: DeployToAKS
-    displayName: 'Deploy to AKS Job'
-    steps:
-    
-    # 1. Download manifests directly from the specific CI pipeline definition
-    - task: DownloadPipelineArtifact@2
-      displayName: 'Download Kubernetes Manifests'
-      name: DownloadManifests # Added a name to reference its outputs later
-      inputs:
-        buildType: 'specific'
-        project: 'bc3eaff1-e291-4c5e-9f12-4b40b75eeb52'
-        pipeline: 'php-project' 
-        buildVersionToDownload: 'latest'
-        artifactName: 'kubernetes-manifests'
-        targetPath: '$(Pipeline.Workspace)/kubernetes-manifests'
 
-    # 2. Deploy the manifests to your AKS cluster
-    - task: KubernetesManifest@1
-      displayName: 'Deploy Application to AKS'
-      inputs:
-        action: 'deploy'
-        connectionType: 'kubernetesServiceConnection'
-        kubernetesServiceConnection: 'aks-connection'
-        namespace: 'default'
-        rolloutStatusTimeout: '30'
-        manifests: |
-          $(Pipeline.Workspace)/kubernetes-manifests/deployment.yml
-          $(Pipeline.Workspace)/kubernetes-manifests/service.yml
-        containers: |
-          myacr73010.azurecr.io/php-app:$(Build.BuildId)
+# =====================================================
+# DEPLOY TO AKS
+# =====================================================
+- stage: Deploy
+  displayName: Deploy PHP Application to AKS
+
+  jobs:
+    - deployment: DeployPHPApp
+      displayName: Deploy PHP Container
+      pool:
+        vmImage: ubuntu-latest
+      environment:
+        name: production
+        resourceName: aks-php-prod
+        resourceType: Kubernetes
+
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+
+              # ===========================================
+              # 1. Download Kubernetes Manifests
+              # ===========================================
+              - task: DownloadPipelineArtifact@2
+                displayName: Download Manifest Artifact
+                inputs:
+                  buildType: specific
+                  project: $(System.TeamProject)
+                  pipeline: $(resources.pipeline.ci-build.pipelineID)
+                  buildVersionToDownload: specific
+                  buildId: $(resources.pipeline.ci-build.runID)
+                  artifactName: manifests
+                  targetPath: $(Pipeline.Workspace)/manifests
+
+              # ===========================================
+              # 2. Download Image Tag
+              # ===========================================
+              - task: DownloadPipelineArtifact@2
+                displayName: Download Image Tag
+                inputs:
+                  buildType: specific
+                  project: $(System.TeamProject)
+                  pipeline: $(resources.pipeline.ci-build.pipelineID)
+                  buildVersionToDownload: specific
+                  buildId: $(resources.pipeline.ci-build.runID)
+                  artifactName: image-tag
+                  targetPath: $(Pipeline.Workspace)/image-tag
+
+              # ===========================================
+              # 3. Extract Image Tag (Explicit Task Scope)
+              # ===========================================
+              - task: Bash@3
+                displayName: Get Docker Image Tag
+                inputs:
+                  targetType: inline
+                  script: |
+                    IMAGE_TAG=$(cat $(Pipeline.Workspace)/image-tag/image-tag.txt)
+                    echo "Deploying Docker Tag: $IMAGE_TAG"
+                    echo "##vso[task.setvariable variable=imageTag;isOutput=false]$IMAGE_TAG"
+
+              # ===========================================
+              # 4. Replace Tokenized Values (Strict Error Check)
+              # ===========================================
+              - task: Bash@3
+                displayName: Replace Workload Identity Values
+                inputs:
+                  targetType: inline
+                  failOnStderr: true
+                  script: |
+                    MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+
+                    echo "Replacing <PHP_MANAGED_IDENTITY_CLIENT_ID>..."
+                    sed -i "s|<PHP_MANAGED_IDENTITY_CLIENT_ID>|$(phpManagedIdentityClientId)|g" ${MANIFEST_DIR}/secretproviderclass.yaml
+                    sed -i "s|<PHP_MANAGED_IDENTITY_CLIENT_ID>|$(phpManagedIdentityClientId)|g" ${MANIFEST_DIR}/serviceaccount.yaml
+
+                    echo "Replacing <KEYVAULT_NAME>..."
+                    sed -i "s|<KEYVAULT_NAME>|$(keyVaultName)|g" ${MANIFEST_DIR}/secretproviderclass.yaml
+
+                    echo "Replacing <AZURE_TENANT_ID>..."
+                    sed -i "s|<AZURE_TENANT_ID>|$(tenantId)|g" ${MANIFEST_DIR}/secretproviderclass.yaml
+
+              # ===========================================
+              # 5. Validate Hydrated Manifest Values
+              # ===========================================
+              - task: Bash@3
+                displayName: Validate Manifest Values
+                inputs:
+                  targetType: inline
+                  script: |
+                    MANIFEST_DIR="$(Pipeline.Workspace)/manifests"
+
+                    echo "=== Validating SecretProviderClass Values ==="
+                    grep clientID ${MANIFEST_DIR}/secretproviderclass.yaml
+                    grep keyvaultName ${MANIFEST_DIR}/secretproviderclass.yaml
+
+                    echo "=== Validating ServiceAccount Annotations ==="
+                    grep "azure.workload.identity/client-id" ${MANIFEST_DIR}/serviceaccount.yaml
+
+                    echo "=== Validating Deployment Image Placeholder ==="
+                    grep image ${MANIFEST_DIR}/deployment.yaml
+
+              # ===========================================
+              # 6. Deploy Application Resources
+              # ===========================================
+              - task: KubernetesManifest@1
+                displayName: Deploy PHP Application
+                inputs:
+                  action: deploy
+                  connectionType: kubernetesServiceConnection
+                  kubernetesServiceConnection: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  manifests: |
+                    $(Pipeline.Workspace)/manifests/configmap.yaml
+                    $(Pipeline.Workspace)/manifests/serviceaccount.yaml
+                    $(Pipeline.Workspace)/manifests/secretproviderclass.yaml
+                    $(Pipeline.Workspace)/manifests/deployment.yaml
+                    $(Pipeline.Workspace)/manifests/service.yaml
+                  containers: |
+                    $(containerRegistry)/$(imageRepository):$(imageTag)
+
+              # ===========================================
+              # 7. Verify Deployment Rollout Status
+              # ===========================================
+              - task: Kubernetes@1
+                displayName: Verify Rollout Status
+                inputs:
+                  connectionType: Kubernetes Service Connection
+                  kubernetesServiceEndpoint: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  command: rollout
+                  arguments: >-
+                    status deployment/php-app
+                    --timeout=180s
+
+              # ===========================================
+              # 8. Post-Deploy Diagnostics & Verification
+              # ===========================================
+              - task: Kubernetes@1
+                displayName: Check Pod Status
+                inputs:
+                  connectionType: Kubernetes Service Connection
+                  kubernetesServiceEndpoint: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  command: get
+                  arguments: pods -l app=php-app -o wide
+
+              - task: Kubernetes@1
+                displayName: Verify Key Vault Secret Sync
+                inputs:
+                  connectionType: Kubernetes Service Connection
+                  kubernetesServiceEndpoint: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  command: get
+                  arguments: secret php-secrets
+
+              - task: Kubernetes@1
+                displayName: Check Deployment & AcrPull
+                inputs:
+                  connectionType: Kubernetes Service Connection
+                  kubernetesServiceEndpoint: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  command: describe
+                  arguments: deployment php-app
+
+              - task: Kubernetes@1
+                displayName: Application Logs
+                inputs:
+                  connectionType: Kubernetes Service Connection
+                  kubernetesServiceEndpoint: $(k8sServiceConnection)
+                  namespace: $(k8sNamespace)
+                  command: logs
+                  arguments: deployment/php-app --tail=50

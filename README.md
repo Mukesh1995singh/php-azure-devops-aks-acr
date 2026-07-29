@@ -1,272 +1,136 @@
-# 🚀 PHP Application CI/CD Pipeline using Azure DevOps, Docker & AKS
+# 🚀 PHP-AZURE-DEVOPS-AKS-ACR-DOCKER
 
 ## 📌 Project Overview
 
-This project demonstrates a complete CI/CD pipeline for deploying a containerized PHP application on **Azure Kubernetes Service (AKS)** using **Azure DevOps**, **Docker**, and **Azure Container Registry (ACR)**.
+This project demonstrates a **production-ready end-to-end DevOps implementation** for deploying a PHP web application on **Azure Kubernetes Service (AKS)** using:
 
-The application is containerized using Docker, stored in Azure Repos, automatically built and pushed to ACR through a CI pipeline, and deployed to AKS using a separate CD pipeline.
+- Azure DevOps CI/CD
+- Docker containerization
+- Azure Container Registry (ACR)
+- Kubernetes orchestration
+- Azure Key Vault integration using Secrets Store CSI Driver
+- Infrastructure as Code using Azure Bicep
+- Azure Database for MySQL Flexible Server
 
----
 
-# 🏗️ Architecture
+The solution follows modern cloud-native practices:
 
-```
-Developer
-    │
-    ▼
-Azure Repos
-    │
-    ▼
-Feature Branch
-    │
-    ▼
-Pull Request
-    │
-    ▼
-CI Pipeline
-    │
-    ├── Checkout Source Code
-    ├── Build Docker Image
-    ├── Security Scan (Trivy)
-    ├── Push Image to Azure Container Registry
-    └── Publish Kubernetes Manifests
-    │
-    ▼
-Azure Container Registry
-    │
-    ▼
-CD Pipeline
-    │
-    ├── Download Artifacts
-    ├── Connect to AKS
-    ├── Deploy Application
-    ├── Verify Deployment
-    └── Expose Application
-    │
-    ▼
-Azure Kubernetes Service
-```
+✅ Infrastructure as Code  
+✅ Containerized application deployment  
+✅ Automated CI/CD pipelines  
+✅ Secure secret management  
+✅ Kubernetes best practices  
+✅ Production monitoring readiness  
+
 
 ---
 
-# 📁 Repository Structure
+# 🏗️ Solution Architecture
+
 
 ```
-php-project
+                         Developer
+                            |
+                            |
+                    Azure Repository
+                            |
+                            |
+              Azure DevOps CI Pipeline
+                            |
+             +--------------+--------------+
+             |                             |
+        Docker Build                 Security Scan
+             |
+             |
+       Push Docker Image
+             |
+             |
+ Azure Container Registry (ACR)
+             |
+             |
+             |
+       Azure DevOps CD Pipeline
+             |
+             |
+       Deploy to AKS Cluster
+             |
+   +---------+----------+
+   |                    |
+Kubernetes          Azure Key Vault
+Resources                 |
+   |                      |
+   |              Secrets Store CSI Driver
+   |
+   |
+PHP Application Pods
+   |
+   |
+MySQL Flexible Server
+```
+
+
+---
+
+# 🛠️ Technology Stack
+
+
+| Category | Technology |
+|----------|------------|
+| Application | PHP 8.2 |
+| Web Server | Apache |
+| Database | Azure Database for MySQL Flexible Server |
+| Containerization | Docker |
+| Container Registry | Azure Container Registry |
+| Container Platform | Kubernetes |
+| Managed Kubernetes | Azure Kubernetes Service |
+| CI/CD | Azure DevOps Pipelines |
+| Infrastructure as Code | Azure Bicep |
+| Secret Management | Azure Key Vault |
+| Secret Integration | Secrets Store CSI Driver |
+| Cloud Provider | Microsoft Azure |
+
+
+---
+
+# 📂 Repository Structure
+
+
+```
+PHP-AZURE-DEVOPS-AKS-ACR-DOCKER
 │
-├── index.php
-├── Dockerfile
+├── app/
+│   ├── config.php
+│   ├── db.php
+│   └── index.php
 │
-├── kubernetes
+├── docs/
+│   ├── architecture.md
+│   └── deployment-guide.md
+│
+├── infra/
+│   │
+│   ├── bicep/
+│   │   ├── acr.bicep
+│   │   ├── aks.bicep
+│   │   ├── keyvault.bicep
+│   │   ├── main.bicep
+│   │   └── mysql.bicep
+│   │
+│   └── terraform/
+│
+├── kubernetes/
+│   ├── namespace.yml
+│   ├── configmap.yml
 │   ├── deployment.yml
-│   └── service.yml
+│   ├── service.yml
+│   └── secretproviderclass.yml
 │
-├── pipelines
+├── pipelines/
 │   ├── azure-pipelines-ci.yml
 │   └── azure-pipelines-cd.yml
 │
-├── README.md
-└── .gitignore
-```
-
----
-
-# 🛠 Technologies Used
-
-- Microsoft Azure
-- Azure Repos
-- Azure DevOps Pipelines
-- Docker
-- Azure Container Registry (ACR)
-- Azure Kubernetes Service (AKS)
-- Kubernetes
-- PHP
-- Git
-- Trivy (Container Security Scan)
-
----
-
-# ⚙ Azure Resources
-
-| Resource | Name |
-|----------|------|
-| Resource Group | app-grp |
-| Azure Container Registry | myacr73010 |
-| AKS Cluster | mukesh-aks |
-| Container Image | phpproject |
-| Region | Central India |
-
----
-
-# 🚀 Continuous Integration (CI)
-
-The CI pipeline performs the following tasks:
-
-- Checkout source code
-- Verify Docker installation
-- Build Docker image
-- Push Docker image to Azure Container Registry
-- Perform container security scan using Trivy
-- Publish Kubernetes manifest files
-
----
-
-# 🚀 Continuous Deployment (CD)
-
-The CD pipeline performs the following tasks:
-
-- Download Kubernetes manifests
-- Install kubectl
-- Connect to AKS
-- Deploy Kubernetes manifests
-- Update container image
-- Verify Pods
-- Verify Services
-- Verify Deployment
-
----
-
-# 🐳 Docker
-
-Build Docker Image
-
-```bash
-docker build -t phpproject .
-```
-
-Run Container
-
-```bash
-docker run -d -p 80:80 phpproject
-```
-
----
-
-# ☸ Kubernetes Deployment
-
-Deploy Application
-
-```bash
-kubectl apply -f kubernetes/deployment.yml
-```
-
-Deploy Service
-
-```bash
-kubectl apply -f kubernetes/service.yml
-```
-
-Check Pods
-
-```bash
-kubectl get pods
-```
-
-Check Services
-
-```bash
-kubectl get svc
-```
-
-Check Deployment
-
-```bash
-kubectl get deployment
-```
-
----
-
-# 📦 Azure CLI Commands
-
-Login
-
-```bash
-az login
-```
-
-Login to ACR
-
-```bash
-az acr login --name myacr73010
-```
-
-Get AKS Credentials
-
-```bash
-az aks get-credentials \
---resource-group app-grp \
---name mukesh-aks
-```
-
----
-
-# 🔒 Security
-
-- Azure DevOps Service Connections
-- Azure RBAC
-- Azure Container Registry Authentication
-- Trivy Container Image Scanning
-- Kubernetes RBAC
-
----
-
-# 📈 CI/CD Workflow
-
-```
-Developer
-      │
-      ▼
-Git Push
-      │
-      ▼
-Azure Repos
-      │
-      ▼
-Pull Request
-      │
-      ▼
-CI Pipeline
-      │
-      ▼
-Docker Image
-      │
-      ▼
-Azure Container Registry
-      │
-      ▼
-CD Pipeline
-      │
-      ▼
-Azure Kubernetes Service
-      │
-      ▼
-Application Running
-```
-
----
-
-# 🎯 Learning Objectives
-
-This project demonstrates:
-
-- Azure Repos
-- Git Branching Strategy
-- Pull Requests
-- YAML Pipelines
-- Docker Containerization
-- Azure Container Registry
-- Azure Kubernetes Service
-- Kubernetes Deployment
-- CI/CD Pipeline Implementation
-- Container Security Scanning
-- Infrastructure Automation
-
----
-
-# 👨‍💻 Author
-
-**Mukesh Kumar**
-
-Azure Administrator | Azure DevOps | Docker | Kubernetes | Linux | Azure CLI
-
----
+├── Dockerfile
+├── .dockerignore
+├── .gitignore
+├── LICENSE
+└── README.md

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: php-app
+  labels:
+    app: php-app
+    environment: production

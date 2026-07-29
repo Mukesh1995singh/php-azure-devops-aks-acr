@@ -2,8 +2,16 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: php-app
+  namespace: php-app
+  labels:
+    app: php-app
 spec:
-  replicas: 2
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: php-app
@@ -11,9 +19,94 @@ spec:
     metadata:
       labels:
         app: php-app
+        # Required for Azure Workload Identity mutation webhook
+        azure.workload.identity/use: "true"
     spec:
+      serviceAccountName: php-app-sa
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 30
+
+      # Security Context (Security Hardening)
+      securityContext:
+        fsGroup: 33
+        # Adjust runAsNonRoot / runAsUser based on whether container listens on port 80 or >1024
+        runAsNonRoot: false
+
+      # Zone Anti-Affinity / High Availability
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app: php-app
+
       containers:
-      - name: php-app
-        image: myacr73010.azurecr.io/php-app
-        ports:
-        - containerPort: 80
+        - name: php-container
+          image: mukeshacr.azurecr.io/php-app:$(imageTag)
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+
+          # Application environment variables from ConfigMap
+          envFrom:
+            - configMapRef:
+                name: php-config
+
+          # Secrets from Key Vault synced K8s Secret
+          env:
+            - name: DB_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: php-secrets
+                  key: db-host
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: php-secrets
+                  key: db-name
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: php-secrets
+                  key: db-username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: php-secrets
+                  key: db-password
+
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 30
+            periodSeconds: 10
+
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+
+          volumeMounts:
+            - name: azure-secrets-store
+              mountPath: "/mnt/secrets-store"
+              readOnly: true
+
+      volumes:
+        - name: azure-secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: php-keyvault-secrets
